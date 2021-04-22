@@ -82,8 +82,6 @@ contract SmartToken is Context, IBEP20, Ownable {
 
     event ExcludeReward(address indexed excludeAddress, bool isExcluded);
 
-
-
     address public companyWallet;
 
     IBSCswapRouter02 public immutable bscV2Router;
@@ -127,7 +125,18 @@ contract SmartToken is Context, IBEP20, Ownable {
      }
 
 
-    
+    function setFee(uint256 _fee) external onlyOwner returns(bool) {
+        require (_fee < 1000000);
+        fee = _fee;
+        return true;
+    }
+
+    function setToRewardPool(uint256 _toRewardPool) external onlyOwner returns(bool) {
+        require (_toRewardPool < 1000000);
+        toRewardPool = _toRewardPool;
+        return true;
+    }
+
 
     // percent per year, without decimals
     function setRewardRate(uint256 rate) external onlyOwner returns(bool) {
