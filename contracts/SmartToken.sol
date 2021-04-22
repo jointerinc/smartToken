@@ -2,98 +2,11 @@
 
 pragma solidity ^0.8.0;
 import "./Ownable.sol";
+import "./interfaces/IBEP20.sol";
+import "./interfaces/IBSCswapRouter02.sol";
+import "./interfaces/IBSCswapFactory.sol";
+import "./library/SafeMath.sol";
 
-
-interface IBEP20 {
-  /**
-   * @dev Returns the amount of tokens in existence.
-   */
-  function totalSupply() external view returns (uint256);
-
-  /**
-   * @dev Returns the token decimals.
-   */
-  function decimals() external view returns (uint8);
-
-  /**
-   * @dev Returns the token symbol.
-   */
-  function symbol() external view returns (string memory);
-
-  /**
-  * @dev Returns the token name.
-  */
-  function name() external view returns (string memory);
-
-  /**
-   * @dev Returns the bep token owner.
-   */
-  function getOwner() external view returns (address);
-
-  /**
-   * @dev Returns the amount of tokens owned by `account`.
-   */
-  function balanceOf(address account) external view returns (uint256);
-
-  /**
-   * @dev Moves `amount` tokens from the caller's account to `recipient`.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transfer(address recipient, uint256 amount) external returns (bool);
-
-  /**
-   * @dev Returns the remaining number of tokens that `spender` will be
-   * allowed to spend on behalf of `owner` through {transferFrom}. This is
-   * zero by default.
-   *
-   * This value changes when {approve} or {transferFrom} are called.
-   */
-  function allowance(address _owner, address spender) external view returns (uint256);
-
-  /**
-   * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * IMPORTANT: Beware that changing an allowance with this method brings the risk
-   * that someone may use both the old and the new allowance by unfortunate
-   * transaction ordering. One possible solution to mitigate this race
-   * condition is to first reduce the spender's allowance to 0 and set the
-   * desired value afterwards:
-   * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-   *
-   * Emits an {Approval} event.
-   */
-  function approve(address spender, uint256 amount) external returns (bool);
-
-  /**
-   * @dev Moves `amount` tokens from `sender` to `recipient` using the
-   * allowance mechanism. `amount` is then deducted from the caller's
-   * allowance.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-
-  /**
-   * @dev Emitted when `value` tokens are moved from one account (`from`) to
-   * another (`to`).
-   *
-   * Note that `value` may be zero.
-   */
-  event Transfer(address indexed from, address indexed to, uint256 value);
-
-  /**
-   * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-   * a call to {approve}. `value` is the new allowance.
-   */
-  event Approval(address indexed owner, address indexed spender, uint256 value);
-}
 
 /*
  * @dev Provides information about the current execution context, including the
@@ -120,170 +33,24 @@ contract Context {
   }
 }
 
-/**
- * @dev Wrappers over Solidity's arithmetic operations with added overflow
- * checks.
- *
- * Arithmetic operations in Solidity wrap on overflow. This can easily result
- * in bugs, because programmers usually assume that an overflow raises an
- * error, which is the standard behavior in high level programming languages.
- * `SafeMath` restores this intuition by reverting the transaction when an
- * operation overflows.
- *
- * Using this library instead of the unchecked operations eliminates an entire
- * class of bugs, so it's recommended to use it always.
- */
-library SafeMath {
-  /**
-   * @dev Returns the addition of two unsigned integers, reverting on
-   * overflow.
-   *
-   * Counterpart to Solidity's `+` operator.
-   *
-   * Requirements:
-   * - Addition cannot overflow.
-   */
-  function add(uint256 a, uint256 b) internal pure returns (uint256) {
-    uint256 c = a + b;
-    require(c >= a, "SafeMath: addition overflow");
 
-    return c;
-  }
-
-  /**
-   * @dev Returns the subtraction of two unsigned integers, reverting on
-   * overflow (when the result is negative).
-   *
-   * Counterpart to Solidity's `-` operator.
-   *
-   * Requirements:
-   * - Subtraction cannot overflow.
-   */
-  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-    return sub(a, b, "SafeMath: subtraction overflow");
-  }
-
-  /**
-   * @dev Returns the subtraction of two unsigned integers, reverting with custom message on
-   * overflow (when the result is negative).
-   *
-   * Counterpart to Solidity's `-` operator.
-   *
-   * Requirements:
-   * - Subtraction cannot overflow.
-   */
-  function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-    require(b <= a, errorMessage);
-    uint256 c = a - b;
-
-    return c;
-  }
-
-  /**
-   * @dev Returns the multiplication of two unsigned integers, reverting on
-   * overflow.
-   *
-   * Counterpart to Solidity's `*` operator.
-   *
-   * Requirements:
-   * - Multiplication cannot overflow.
-   */
-  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
-    // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
-    // benefit is lost if 'b' is also tested.
-    // See: https://github.com/OpenZeppelin/openzeppelin-contracts/pull/522
-    if (a == 0) {
-      return 0;
-    }
-
-    uint256 c = a * b;
-    require(c / a == b, "SafeMath: multiplication overflow");
-
-    return c;
-  }
-
-  /**
-   * @dev Returns the integer division of two unsigned integers. Reverts on
-   * division by zero. The result is rounded towards zero.
-   *
-   * Counterpart to Solidity's `/` operator. Note: this function uses a
-   * `revert` opcode (which leaves remaining gas untouched) while Solidity
-   * uses an invalid opcode to revert (consuming all remaining gas).
-   *
-   * Requirements:
-   * - The divisor cannot be zero.
-   */
-  function div(uint256 a, uint256 b) internal pure returns (uint256) {
-    return div(a, b, "SafeMath: division by zero");
-  }
-
-  /**
-   * @dev Returns the integer division of two unsigned integers. Reverts with custom message on
-   * division by zero. The result is rounded towards zero.
-   *
-   * Counterpart to Solidity's `/` operator. Note: this function uses a
-   * `revert` opcode (which leaves remaining gas untouched) while Solidity
-   * uses an invalid opcode to revert (consuming all remaining gas).
-   *
-   * Requirements:
-   * - The divisor cannot be zero.
-   */
-  function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-    // Solidity only automatically asserts when dividing by 0
-    require(b > 0, errorMessage);
-    uint256 c = a / b;
-    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
-
-    return c;
-  }
-
-  /**
-   * @dev Returns the remainder of dividing two unsigned integers. (unsigned integer modulo),
-   * Reverts when dividing by zero.
-   *
-   * Counterpart to Solidity's `%` operator. This function uses a `revert`
-   * opcode (which leaves remaining gas untouched) while Solidity uses an
-   * invalid opcode to revert (consuming all remaining gas).
-   *
-   * Requirements:
-   * - The divisor cannot be zero.
-   */
-  function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-    return mod(a, b, "SafeMath: modulo by zero");
-  }
-
-  /**
-   * @dev Returns the remainder of dividing two unsigned integers. (unsigned integer modulo),
-   * Reverts with custom message when dividing by zero.
-   *
-   * Counterpart to Solidity's `%` operator. This function uses a `revert`
-   * opcode (which leaves remaining gas untouched) while Solidity uses an
-   * invalid opcode to revert (consuming all remaining gas).
-   *
-   * Requirements:
-   * - The divisor cannot be zero.
-   */
-  function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-    require(b != 0, errorMessage);
-    return a % b;
-  }
-}
 
 
 
 contract SmartToken is Context, IBEP20, Ownable {
-  using SafeMath for uint256;
 
-  mapping (address => uint256) private _balances;
+    using SafeMath for uint256;
 
-  mapping (address => mapping (address => uint256)) private _allowances;
-  
-  mapping (address => uint256) private _lock;
+    mapping (address => uint256) private _balances;
 
-  uint256 private _totalSupply;
-  uint8 private _decimals;
-  string private _symbol;
-  string private _name;
+    mapping (address => mapping (address => uint256)) private _allowances;
+    
+    mapping (address => uint256) private _lock;
+
+    uint256 private _totalSupply;
+    uint8 private _decimals;
+    string private _symbol;
+    string private _name;
 
     // for airdrop lock
     address public airdrop_maker;
@@ -295,18 +62,35 @@ contract SmartToken is Context, IBEP20, Ownable {
     uint256 constant NUMBER_OF_BLOCKS = 10512000;  // number of blocks per year (1 block = 3 sec)
     mapping (address => uint256) public startBlock;
     mapping (address => bool) public excludeReward;
+
     uint256 public currentRate;    // percent per year, without decimals
     uint256 public rewardRate; // % per block (18 decimals)
     uint256 public lastBlock = block.number;
     uint256 public totalStakingWeight; //total weight = sum (each_staking_amount * each_staking_time).
     uint256 public totalStakingAmount; //eligible amount for Staking.
     uint256 public stakingRewardPool;  //available amount for paying rewards.
+
+    // 2 decimals
+    uint256 public fee;
+
+    // 2 decimals
+    uint256 public toRewardPool;
+
     mapping(address => bool) public gateways; // different gateways will be used for different pairs (chains)
+
     event ChangeGateway(address gateway, bool active);
+
     event ExcludeReward(address indexed excludeAddress, bool isExcluded);
 
-    address companyWallet;
-      /**
+
+
+    address public companyWallet;
+
+    IBSCswapRouter02 public immutable bscV2Router;
+    address public immutable bscV2Pair; 
+
+
+    /**
        * @dev Throws if called by any account other than the gateway.
        */
       modifier onlyGateway() {
@@ -320,7 +104,7 @@ contract SmartToken is Context, IBEP20, Ownable {
         return true;
       }
 
-    constructor(address _companyWallet){
+    constructor(address _companyWallet,address _bscV2RouterAddress){
         _name = "Smart Governance Token V2";
         _symbol = "Smart";
         _decimals = 18;
@@ -334,7 +118,16 @@ contract SmartToken is Context, IBEP20, Ownable {
         rewardRate = currentRate * NOMINATOR / (NUMBER_OF_BLOCKS * 100);
         airdrop_maker = _msgSender();
         _mint(companyWallet, 1500000000 ether);
+        fee = 500;
+        toRewardPool = 2000;
+        IBSCswapRouter02 _bscV2Router = IBSCswapRouter02(_bscV2RouterAddress);
+        bscV2Router = _bscV2Router;
+        bscV2Pair = IBSCswapFactory(_bscV2Router.factory())
+            .createPair(address(this), _bscV2Router.WBNB());
      }
+
+
+    
 
     // percent per year, without decimals
     function setRewardRate(uint256 rate) external onlyOwner returns(bool) {
@@ -619,26 +412,97 @@ contract SmartToken is Context, IBEP20, Ownable {
    */
   function _transfer(address sender, address recipient, uint256 amount) internal {
     
-    require(block.timestamp >= _lock[sender],"token is locked");
-    require(sender != address(0), "BEP20: transfer from the zero address");
-    require(recipient != address(0), "BEP20: transfer to the zero address");
-    new_block();    // run once per block
-    _addReward(sender);
-    _addReward(recipient);
-    bool r_e = excludeReward[recipient];
-    bool s_e = excludeReward[sender];
-    if (r_e && !s_e) totalStakingAmount = totalStakingAmount.sub(amount);
-    if (!r_e && s_e) totalStakingAmount = totalStakingAmount.add(amount);
+      require(block.timestamp >= _lock[sender],"token is locked");
+      require(sender != address(0), "BEP20: transfer from the zero address");
+      require(recipient != address(0), "BEP20: transfer to the zero address");      
+      new_block();    // run once per block
+      _addReward(sender);
+      _addReward(recipient);
+      uint256 senderBalance = _balances[sender];
+      require(senderBalance >= amount, "BEP20: transfer amount exceeds balance");
 
-    if (locked[sender]) {
-        require(_balances[sender] >= unlock_amount, "To unlock your wallet, you have to double the airdropped amount.");
-        locked[sender] = false;
+      bool r_e = excludeReward[recipient];
+      bool s_e = excludeReward[sender];
+      if (r_e && !s_e) totalStakingAmount = totalStakingAmount.sub(amount);
+      if (!r_e && s_e) totalStakingAmount = totalStakingAmount.add(amount);
+
+      if (locked[sender]) {
+          require(_balances[sender] >= unlock_amount, "To unlock your wallet, you have to double the airdropped amount.");
+          locked[sender] = false;
+      }
+
+      uint256 _fee = amount.mul(fee).div(10000);
+
+      uint256 _toRewardPool = fee.mul(toRewardPool).div(10000);
+
+      _balances[address(1)] = _balances[address(1)].add(_toRewardPool); 
+      emit Transfer(sender, address(1), _toRewardPool);
+      
+      _balances[address(this)] = _balances[address(this)].add(_fee.sub(_toRewardPool)); 
+      emit Transfer(sender,address(this),_fee.sub(_toRewardPool));
+
+      _balances[sender] =  _balances[sender].sub(amount);
+      _balances[recipient] =  _balances[recipient].add(amount.sub(_fee));
+      emit Transfer(sender, recipient, amount);
+  }
+
+  function swapAndLiquify() private  {
+        // split the contract balance into halves
+        uint256 contractTokenBalance = _balances[address(this)];
+        uint256 half = contractTokenBalance.div(2);
+        uint256 otherHalf = contractTokenBalance.sub(half);
+
+        // capture the contract's current ETH balance.
+        // this is so that we can capture exactly the amount of ETH that the
+        // swap creates, and not make the liquidity event include any ETH that
+        // has been manually sent to the contract
+        uint256 initialBalance = address(this).balance;
+
+        // swap tokens for ETH
+        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+
+        // how much ETH did we just swap into?
+        uint256 newBalance = address(this).balance.sub(initialBalance);
+
+        // add liquidity to uniswap
+        addLiquidity(otherHalf, newBalance);
     }
 
-    _balances[sender] = _balances[sender].sub(amount, "BEP20: transfer amount exceeds balance");
-    _balances[recipient] = _balances[recipient].add(amount);
-    emit Transfer(sender, recipient, amount);
-  }
+    function swapTokensForEth(uint256 tokenAmount) private {
+        // generate the uniswap pair path of token -> weth
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = bscV2Router.WBNB();
+
+        _approve(address(this), address(bscV2Router), tokenAmount);
+
+        // make the swap
+        
+        bscV2Router.swapExactTokensForBNBSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0, // accept any amount of ETH
+            path,
+            address(this),
+            block.timestamp
+        );
+    }
+
+    function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), address(bscV2Router), tokenAmount);
+
+        // add the liquidity
+        bscV2Router.addLiquidityBNB{value: bnbAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            companyWallet,
+            block.timestamp
+        );
+    }
+
+
 
   /** @dev Creates `amount` tokens and assigns them to `account`, increasing
    * the total supply.
