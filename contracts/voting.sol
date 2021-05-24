@@ -20,7 +20,6 @@ contract Governance  is Ownable{
     
     IERC20Token public tokenContract; 
 
-
     uint256 public closeTime = 24 hours;   // timestamp when votes will close
     
     //2 decimals
@@ -73,7 +72,7 @@ contract Governance  is Ownable{
         tokenContract = IERC20Token(_token);
     }
     
-     /**
+    /**
      * @dev Add new rule - function that call target contract to change setting.
         * @param contr The contract address which have to be triggered
         * @param majority The majority level (%) for the tokens 
@@ -100,7 +99,7 @@ contract Governance  is Ownable{
         }
     }
     
-     /**
+    /**
         * @dev Remove addresses from excluded list
         * @param wallet The address to remove
      */

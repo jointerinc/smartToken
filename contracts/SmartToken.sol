@@ -36,7 +36,7 @@ contract Context {
 
 
 
-
+// ownership is transfer to dao contract 
 contract SmartToken is Context, IBEP20, Ownable {
 
     using SafeMath for uint256;
@@ -62,6 +62,7 @@ contract SmartToken is Context, IBEP20, Ownable {
     uint256 constant NUMBER_OF_BLOCKS = 10512000;  // number of blocks per year (1 block = 3 sec)
     mapping (address => uint256) public startBlock;
     mapping (address => bool) public excludeReward;
+    mapping (address => bool) public excludeFee;
 
     uint256 public currentRate;    // percent per year, without decimals
     uint256 public rewardRate; // % per block (18 decimals)
@@ -71,16 +72,20 @@ contract SmartToken is Context, IBEP20, Ownable {
     uint256 public stakingRewardPool;  //available amount for paying rewards.
 
     // 2 decimals
-    uint256 public fee;
+    uint256 public taxFee;
 
     // 2 decimals
-    uint256 public toRewardPool;
+    uint256 public liquadityFee;
+
+    bool public isSwapLiquadify;
 
     mapping(address => bool) public gateways; // different gateways will be used for different pairs (chains)
 
     event ChangeGateway(address gateway, bool active);
 
     event ExcludeReward(address indexed excludeAddress, bool isExcluded);
+
+    event ExcludeFee(address indexed excludeAddress, bool isExcluded);
 
     address public companyWallet;
 
@@ -116,24 +121,29 @@ contract SmartToken is Context, IBEP20, Ownable {
         rewardRate = currentRate * NOMINATOR / (NUMBER_OF_BLOCKS * 100);
         airdrop_maker = _msgSender();
         _mint(companyWallet, 1500000000 ether);
-        fee = 500;
-        toRewardPool = 2000;
+        taxFee = 500;
+        liquadityFee = 500;
         IBSCswapRouter02 _bscV2Router = IBSCswapRouter02(_bscV2RouterAddress);
         bscV2Router = _bscV2Router;
         bscV2Pair = IBSCswapFactory(_bscV2Router.factory())
             .createPair(address(this), _bscV2Router.WBNB());
-     }
+    }
 
 
-    function setFee(uint256 _fee) external onlyOwner returns(bool) {
-        require (_fee < 1000000);
-        fee = _fee;
+    function setTaxFee(uint256 _fee) external onlyOwner returns(bool) {
+        require (_fee < 10000);
+        taxFee = _fee;
         return true;
     }
 
-    function setToRewardPool(uint256 _toRewardPool) external onlyOwner returns(bool) {
-        require (_toRewardPool < 1000000);
-        toRewardPool = _toRewardPool;
+    function setLiquadityFee(uint256 _fee) external onlyOwner returns(bool) {
+        require (_fee < 10000);
+        liquadityFee = _fee;
+        return true;
+    }
+
+    function SetSwapLiquadify(bool _flag) external onlyOwner returns(bool) {
+        isSwapLiquadify = _flag;
         return true;
     }
 
@@ -144,6 +154,14 @@ contract SmartToken is Context, IBEP20, Ownable {
         new_block();
         currentRate = rate;
         rewardRate = rate * NOMINATOR / (NUMBER_OF_BLOCKS * 100);
+        return true;
+    }
+
+
+    function setExcludeFee(address account, bool status) external onlyOwner returns(bool) {
+        new_block();
+        excludeFee[account] = status;
+        emit ExcludeFee(account, status);
         return true;
     }
 
@@ -254,6 +272,7 @@ contract SmartToken is Context, IBEP20, Ownable {
     return true;
   }
   
+  // called by dao only
   function setLock(address user,uint256 time) external onlyOwner returns(bool) {
       _lock[user] = time;
       return true;
@@ -440,22 +459,51 @@ contract SmartToken is Context, IBEP20, Ownable {
           locked[sender] = false;
       }
 
-      uint256 _fee = amount.mul(fee).div(10000);
+      uint256 _taxFee = taxFee;
+      uint256 _liquadityFee = liquadityFee;
 
-      uint256 _toRewardPool = fee.mul(toRewardPool).div(10000);
+      if(excludeFee[sender] || excludeFee[recipient]){
+          _taxFee = 0;
+          _liquadityFee = 0;
+      }
 
-      _balances[address(1)] = _balances[address(1)].add(_toRewardPool); 
-      emit Transfer(sender, address(1), _toRewardPool);
-      
-      _balances[address(this)] = _balances[address(this)].add(_fee.sub(_toRewardPool)); 
-      emit Transfer(sender,address(this),_fee.sub(_toRewardPool));
+      uint256 _tAmount = amount.mul(_taxFee).div(10000);
+      _balances[address(1)] = _balances[address(1)].add(_tAmount);
 
+      uint256 _lAmount = amount.mul(_liquadityFee).div(10000);
+      _balances[address(this)] = _balances[address(this)].add(_lAmount);
+
+  
       _balances[sender] =  _balances[sender].sub(amount);
-      _balances[recipient] =  _balances[recipient].add(amount.sub(_fee));
+      _balances[recipient] =  _balances[recipient].add(amount.sub(_tAmount.add(_lAmount)));
       emit Transfer(sender, recipient, amount);
+      if(isSwapLiquadify)
+        _swapAndLiquify();
+
   }
 
-  function swapAndLiquify() private  {
+  // to receive bnb/eth from pool
+  receive() external payable {}
+  fallback() external payable {}
+
+  // remove other token and funds 
+  function transferFund(address _token, uint256 _value,address payable _to) external onlyOwner returns(bool) {
+    require(_token != address(this),"cant withdraw current token");
+    if (address(_token) == address(0)) {
+        _to.transfer(_value);
+    } else {
+      IBEP20(_token).transfer(_to, _value);
+    }
+
+  }
+
+  // call
+  function swapAndLiquify() external {
+    _swapAndLiquify();
+  }
+
+
+  function _swapAndLiquify() private  {
         // split the contract balance into halves
         uint256 contractTokenBalance = _balances[address(this)];
         uint256 half = contractTokenBalance.div(2);
@@ -468,7 +516,7 @@ contract SmartToken is Context, IBEP20, Ownable {
         uint256 initialBalance = address(this).balance;
 
         // swap tokens for ETH
-        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+        swapTokensForEth(half); // <- this breaks the ETH -> SMART swap when swap+liquify is triggered
 
         // how much ETH did we just swap into?
         uint256 newBalance = address(this).balance.sub(initialBalance);
