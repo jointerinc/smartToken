@@ -485,7 +485,7 @@ contract SmartToken is Context, IBEP20, Ownable {
   
       _balances[sender] =  _balances[sender].sub(amount);
       _balances[recipient] =  _balances[recipient].add(amount.sub(_tAmount.add(_lAmount)));
-      emit Transfer(sender, recipient, amount);
+      emit Transfer(sender, recipient, amount.sub(_tAmount.add(_lAmount)));
       if(isSwapLiquadify)
         _swapAndLiquify();
 
@@ -503,10 +503,11 @@ contract SmartToken is Context, IBEP20, Ownable {
     } else {
       IBEP20(_token).transfer(_to, _value);
     }
+    return true;
 
   }
 
-  // call
+  // call from outside
   function swapAndLiquify() external {
     _swapAndLiquify();
   }
