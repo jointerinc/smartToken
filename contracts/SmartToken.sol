@@ -79,6 +79,8 @@ contract SmartToken is Context, IBEP20, Ownable {
 
     bool public isSwapLiquadify;
 
+    bool public isBurn;
+
     mapping(address => bool) public gateways; // different gateways will be used for different pairs (chains)
 
     event ChangeGateway(address gateway, bool active);
@@ -146,7 +148,11 @@ contract SmartToken is Context, IBEP20, Ownable {
         isSwapLiquadify = _flag;
         return true;
     }
-
+ 
+    function SetisBurn(bool _flag) external onlyOwner returns(bool) {
+        isBurn = _flag;
+        return true;
+    }
 
     // percent per year, without decimals
     function setRewardRate(uint256 rate) external onlyOwner returns(bool) {
@@ -469,6 +475,9 @@ contract SmartToken is Context, IBEP20, Ownable {
 
       uint256 _tAmount = amount.mul(_taxFee).div(10000);
       _balances[address(1)] = _balances[address(1)].add(_tAmount);
+      
+      if(isBurn)
+        _burn(address(1), _tAmount);
 
       uint256 _lAmount = amount.mul(_liquadityFee).div(10000);
       _balances[address(this)] = _balances[address(this)].add(_lAmount);
