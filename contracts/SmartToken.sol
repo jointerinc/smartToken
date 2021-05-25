@@ -1,11 +1,11 @@
 
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.1;
+
 import "./Ownable.sol";
 import "./interfaces/IBEP20.sol";
-import "./interfaces/IBSCswapRouter02.sol";
-import "./interfaces/IBSCswapFactory.sol";
 import "./library/SafeMath.sol";
+import "./SmartProtocol.sol";
 
 
 /*
@@ -31,6 +31,7 @@ contract Context {
     this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
     return msg.data;
   }
+  
 }
 
 
@@ -78,6 +79,8 @@ contract SmartToken is Context, IBEP20, Ownable {
     uint256 public liquadityFee;
 
     bool public isSwapLiquadify;
+    
+    uint256 public protocolTriggerBalance;
 
     bool public isBurn;
 
@@ -91,25 +94,25 @@ contract SmartToken is Context, IBEP20, Ownable {
 
     address public companyWallet;
 
-    IBSCswapRouter02 public immutable bscV2Router;
-    address public immutable bscV2Pair; 
+    SmartProtocol public smartProtocol;
+     
 
 
     /**
        * @dev Throws if called by any account other than the gateway.
-       */
+     */
       modifier onlyGateway() {
         require(gateways[_msgSender()], "Caller is not the gateway");
         _;
       }
 
-      function changeGateway(address gateway, bool active) external onlyOwner returns(bool) {
+    function changeGateway(address gateway, bool active) external onlyOwner returns(bool) {
         gateways[gateway] = active;
         emit ChangeGateway(gateway, active);
         return true;
-      }
+    }
 
-    constructor(address _companyWallet,address _bscV2RouterAddress){
+    constructor(address _companyWallet){
         _name = "Smart Governance Token V2";
         _symbol = "Smart";
         _decimals = 18;
@@ -123,12 +126,7 @@ contract SmartToken is Context, IBEP20, Ownable {
         rewardRate = currentRate * NOMINATOR / (NUMBER_OF_BLOCKS * 100);
         airdrop_maker = _msgSender();
         _mint(companyWallet, 1500000000 ether);
-        taxFee = 500;
-        liquadityFee = 500;
-        IBSCswapRouter02 _bscV2Router = IBSCswapRouter02(_bscV2RouterAddress);
-        bscV2Router = _bscV2Router;
-        bscV2Pair = IBSCswapFactory(_bscV2Router.factory())
-            .createPair(address(this), _bscV2Router.WBNB());
+        protocolTriggerBalance = 1000000 ether;
     }
 
 
@@ -140,16 +138,30 @@ contract SmartToken is Context, IBEP20, Ownable {
 
     function setLiquadityFee(uint256 _fee) external onlyOwner returns(bool) {
         require (_fee < 10000);
+        require(address(smartProtocol) != address(0),"to change flag for swapLiquadify first set addresss");
         liquadityFee = _fee;
         return true;
     }
-
+    
+    function setProtocolTriggerBalance(uint256 _protocolTriggerBalance) external onlyOwner returns(bool) {
+        protocolTriggerBalance = _protocolTriggerBalance;
+        return true;
+    }
+    
+    function setProtocolAddress(address payable _smartProtocol) external onlyOwner returns(bool) {
+        require(_smartProtocol != address(0),"zero address");
+        smartProtocol = SmartProtocol(_smartProtocol);
+        return true;
+    }
+    
+  
     function SetSwapLiquadify(bool _flag) external onlyOwner returns(bool) {
+        require(address(smartProtocol) != address(0),"to change flag for swapLiquadify first set addresss");
         isSwapLiquadify = _flag;
         return true;
     }
  
-    function SetisBurn(bool _flag) external onlyOwner returns(bool) {
+    function SetIsBurn(bool _flag) external onlyOwner returns(bool) {
         isBurn = _flag;
         return true;
     }
@@ -476,98 +488,31 @@ contract SmartToken is Context, IBEP20, Ownable {
       uint256 _tAmount = amount.mul(_taxFee).div(10000);
       _balances[address(1)] = _balances[address(1)].add(_tAmount);
       
-      if(isBurn)
-        _burn(address(1), _tAmount);
-
-      uint256 _lAmount = amount.mul(_liquadityFee).div(10000);
-      _balances[address(this)] = _balances[address(this)].add(_lAmount);
-
+       if(_tAmount > 0)
+        emit Transfer(sender, address(1), _tAmount);
+        
+       if(isBurn)
+         _burn(address(1), _tAmount);
+    
+        uint256 _lAmount = amount.mul(_liquadityFee).div(10000);
+         _balances[address(smartProtocol)] = _balances[address(smartProtocol)].add(_lAmount);
+    
+       if(_lAmount > 0)
+        emit Transfer(sender, address(smartProtocol), _tAmount);
   
       _balances[sender] =  _balances[sender].sub(amount);
       _balances[recipient] =  _balances[recipient].add(amount.sub(_tAmount.add(_lAmount)));
+      
       emit Transfer(sender, recipient, amount.sub(_tAmount.add(_lAmount)));
-      if(isSwapLiquadify)
-        _swapAndLiquify();
+      
+      if((sender != address(smartProtocol) && recipient != address(smartProtocol)) && (isSwapLiquadify && _balances[address(smartProtocol)] >= protocolTriggerBalance))
+            smartProtocol.swapAndLiquify();
 
   }
 
-  // to receive bnb/eth from pool
-  receive() external payable {}
-  fallback() external payable {}
+ 
 
-  // remove other token and funds 
-  function transferFund(address _token, uint256 _value,address payable _to) external onlyOwner returns(bool) {
-    require(_token != address(this),"cant withdraw current token");
-    if (address(_token) == address(0)) {
-        _to.transfer(_value);
-    } else {
-      IBEP20(_token).transfer(_to, _value);
-    }
-    return true;
-
-  }
-
-  // call from outside
-  function swapAndLiquify() external {
-    _swapAndLiquify();
-  }
-
-
-  function _swapAndLiquify() private  {
-        // split the contract balance into halves
-        uint256 contractTokenBalance = _balances[address(this)];
-        uint256 half = contractTokenBalance.div(2);
-        uint256 otherHalf = contractTokenBalance.sub(half);
-
-        // capture the contract's current ETH balance.
-        // this is so that we can capture exactly the amount of ETH that the
-        // swap creates, and not make the liquidity event include any ETH that
-        // has been manually sent to the contract
-        uint256 initialBalance = address(this).balance;
-
-        // swap tokens for ETH
-        swapTokensForEth(half); // <- this breaks the ETH -> SMART swap when swap+liquify is triggered
-
-        // how much ETH did we just swap into?
-        uint256 newBalance = address(this).balance.sub(initialBalance);
-
-        // add liquidity to uniswap
-        addLiquidity(otherHalf, newBalance);
-    }
-
-    function swapTokensForEth(uint256 tokenAmount) private {
-        // generate the uniswap pair path of token -> weth
-        address[] memory path = new address[](2);
-        path[0] = address(this);
-        path[1] = bscV2Router.WBNB();
-
-        _approve(address(this), address(bscV2Router), tokenAmount);
-
-        // make the swap
-        
-        bscV2Router.swapExactTokensForBNBSupportingFeeOnTransferTokens(
-            tokenAmount,
-            0, // accept any amount of ETH
-            path,
-            address(this),
-            block.timestamp
-        );
-    }
-
-    function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
-        // approve token transfer to cover all possible scenarios
-        _approve(address(this), address(bscV2Router), tokenAmount);
-
-        // add the liquidity
-        bscV2Router.addLiquidityBNB{value: bnbAmount}(
-            address(this),
-            tokenAmount,
-            0, // slippage is unavoidable
-            0, // slippage is unavoidable
-            companyWallet,
-            block.timestamp
-        );
-    }
+  
 
 
 
@@ -651,4 +596,7 @@ contract SmartToken is Context, IBEP20, Ownable {
     _burnFrom(account, amount);
     return true;
   }
+  
+   // to receive bnb/eth from pool
+  receive() external payable {}
 }
