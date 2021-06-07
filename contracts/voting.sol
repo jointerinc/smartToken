@@ -20,6 +20,9 @@ contract Governance  is Ownable{
     
     IERC20Token public tokenContract; 
 
+    IERC20Token public escrowContarct; 
+
+
     uint256 public closeTime = 24 hours;   // timestamp when votes will close
     
     //2 decimals
@@ -67,9 +70,10 @@ contract Governance  is Ownable{
     event ApplyBallot(uint256 indexed ruleId, uint256 indexed ballotId);
 
     
-    constructor(address _token)  {
+    constructor(address _token,address _escrowContarct)  {
         rules[0] = Rule(address(this),50,"addRule(address,uint8,string)");
         tokenContract = IERC20Token(_token);
+        escrowContarct = IERC20Token(_escrowContarct);
     }
     
     /**
@@ -87,6 +91,12 @@ contract Governance  is Ownable{
         rulesIds +=1;
         rules[rulesIds] = Rule(contr, majority, funcAbi);
         emit AddRule(contr, funcAbi, majority);
+    }
+
+
+
+    function updateEscrow(address _escrowContarct) external onlyOwner {
+        escrowContarct = IERC20Token(_escrowContarct);
     }
     
     /**
@@ -159,7 +169,19 @@ contract Governance  is Ownable{
     function _getVotingPower(address voter) internal view
         returns(uint256 votingPower)
     {
-        return tokenContract.balanceOf(voter);
+        return (tokenContract.balanceOf(voter) + escrowContarct.balanceOf(voter));
+    }
+
+
+    function _lockToken(address voter, uint256 _closeTime) internal {
+        uint256 userLock = tokenContract.getLock(voter);
+        if(_closeTime > userLock ){
+            tokenContract.setLock(voter,_closeTime);
+        }
+        userLock = escrowContarct.getLock(voter);
+        if(_closeTime > userLock ){
+            escrowContarct.setLock(voter,_closeTime);
+        }    
     }
     
     function _checkMajority(uint8 majority,uint256 _ballotId) internal view returns(bool){
@@ -223,10 +245,7 @@ contract Governance  is Ownable{
         if(majority){
             _executeBallot(_ballotId);
         }else{
-            uint256 userLock = tokenContract.getLock(msg.sender);
-            if(b.closeVote > userLock ){
-                tokenContract.setLock(msg.sender,b.closeVote);
-            }    
+            _lockToken(msg.sender,b.closeVote);
         }
         return true;
         
@@ -257,13 +276,9 @@ contract Governance  is Ownable{
         if(majority){
             _executeBallot(ballotIds);
         }else{
-            uint256 userLock = tokenContract.getLock(msg.sender);
-            if(b.closeVote > userLock ){
-                tokenContract.setLock(msg.sender,b.closeVote);
-            }
+            _lockToken(msg.sender,b.closeVote);
         }
         
-    
     }
     
     function executeBallot(uint256 _ballotId) external {
