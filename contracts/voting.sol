@@ -20,9 +20,6 @@ contract Governance  is Ownable{
     
     IERC20Token public tokenContract; 
 
-    IERC20Token public escrowContarct; 
-
-
     uint256 public closeTime = 24 hours;   // timestamp when votes will close
     
     //2 decimals
@@ -34,11 +31,11 @@ contract Governance  is Ownable{
     uint256 public rulesIds;
     
     enum Vote {None, Yea, Nay}
-    enum Status {New , Excuted}
+    enum Status {New , Executed}
 
     struct Rule {
         address contr;      // contract address which have to be triggered
-        uint8 majority;  // require more than this percentage of participants voting power (in according tokens).
+        uint32 majority;  // require more than this percentage of participants voting power (in according tokens).
         string funcAbi;     // function ABI (ex. "transfer(address,uint256)")
     }
     
@@ -61,19 +58,18 @@ contract Governance  is Ownable{
     
 
     uint256 public circulationSupply;   // Circulation Supply of according tokens
-    uint256 public circulationSupplyUpdated; // timestamp when Circulation Supply was updated
+    //uint256 public circulationSupplyUpdated; // timestamp when Circulation Supply was updated
     
     address[] public excluded;
-    
+    IERC20Token public dumperShield;
     
     event AddRule(address indexed contractAddress, string funcAbi, uint8 majorMain);
     event ApplyBallot(uint256 indexed ruleId, uint256 indexed ballotId);
 
     
-    constructor(address _token,address _escrowContarct)  {
-        rules[0] = Rule(address(this),50,"addRule(address,uint8,string)");
+    constructor(address _token)  {
+        rules[0] = Rule(address(this),9000,"addRule(address,uint8,string)");
         tokenContract = IERC20Token(_token);
-        escrowContarct = IERC20Token(_escrowContarct);
     }
     
     /**
@@ -91,12 +87,6 @@ contract Governance  is Ownable{
         rulesIds +=1;
         rules[rulesIds] = Rule(contr, majority, funcAbi);
         emit AddRule(contr, funcAbi, majority);
-    }
-
-
-
-    function updateEscrow(address _escrowContarct) external onlyOwner {
-        escrowContarct = IERC20Token(_escrowContarct);
     }
     
     /**
@@ -151,6 +141,14 @@ contract Governance  is Ownable{
     }
     
     /**
+     * @dev Set dumperShield contract address
+     * @param _dumperShield address of dumperShield contract
+     */
+    function setDumperShield(address _dumperShield) external onlyOwner {
+        dumperShield = IERC20Token(_dumperShield);
+    }
+
+    /**
      * @dev Get rules details.
      * @param ruleId The rules index
      * @return contr The contract address
@@ -159,7 +157,7 @@ contract Governance  is Ownable{
     */
     function getRule(uint256 ruleId) external view
         returns(address contr,
-        uint8 majority,
+        uint32 majority,
         string memory funcAbi)
     {
         Rule storage r = rules[ruleId];
@@ -167,32 +165,25 @@ contract Governance  is Ownable{
     }
     
     function _getVotingPower(address voter) internal view
-        returns(uint256 votingPower)
+        returns(uint256 votingPower, bool inDumperShield)
     {
-        return (tokenContract.balanceOf(voter) + escrowContarct.balanceOf(voter));
-    }
+        votingPower = tokenContract.balanceOf(voter);
 
-
-    function _lockToken(address voter, uint256 _closeTime) internal {
-        uint256 userLock = tokenContract.getLock(voter);
-        if(_closeTime > userLock ){
-            tokenContract.setLock(voter,_closeTime);
+        if (address(dumperShield) != address(0)) {
+            votingPower += dumperShield.balanceOf(voter);
+            inDumperShield = true;
         }
-        userLock = escrowContarct.getLock(voter);
-        if(_closeTime > userLock ){
-            escrowContarct.setLock(voter,_closeTime);
-        }    
     }
     
-    function _checkMajority(uint8 majority,uint256 _ballotId) internal view returns(bool){
+    function _checkMajority(uint32 majority,uint256 _ballotId) internal view returns(bool){
         
-        Ballot memory b = ballots[_ballotId];
+        Ballot storage b = ballots[_ballotId];
 
         uint256 totalVotes =  b.yea * 10000 / circulationSupply ;
 
         if(totalVotes >= absoluteLevel){
             return true;
-        }else if(b.closeVote >= block.timestamp){
+        } else if (block.timestamp >= b.closeVote) {
             totalVotes = b.yea * 10000 / b.totalVotes;
             
             if(totalVotes > majority){
@@ -213,22 +204,25 @@ contract Governance  is Ownable{
         uint len = excluded.length;
         for (uint j = 0; j < len; j++) {
             total += tokenContract.balanceOf(excluded[j]);
+            if (address(dumperShield) != address(0))
+                total += dumperShield.balanceOf(excluded[j]);            
         }
         uint256 t = tokenContract.totalSupply();
         require(t >= total, "Total Supply less then accounts balance");
         circulationSupply = t - total;
-        circulationSupplyUpdated = block.timestamp;  // timestamp when circulationSupply updates
+        //circulationSupplyUpdated = block.timestamp;  // timestamp when circulationSupply updates
         
     }
     
     // answer 1 = yay and answer 2 = nay
     function vote(uint256 _ballotId,uint answer) external returns (bool){
-        require(_ballotId <= rulesIds,"Wrong rule ID");
+        require(_ballotId <= ballotIds,"Wrong ballot ID");
         require(voted[msg.sender][_ballotId] == false,"already voted");
         
         Ballot storage b = ballots[_ballotId];
-        require(b.closeVote >= block.timestamp,"voting closed");
-        uint256 power = _getVotingPower(msg.sender);
+        uint256 closeVote = b.closeVote;
+        require(closeVote > block.timestamp,"voting closed");
+        (uint256 power, bool inDumperShield) = _getVotingPower(msg.sender);
         
         if(answer == 1){
             b.yea += power;    
@@ -245,7 +239,15 @@ contract Governance  is Ownable{
         if(majority){
             _executeBallot(_ballotId);
         }else{
-            _lockToken(msg.sender,b.closeVote);
+            uint256 userLock = tokenContract.getLock(msg.sender);
+            if(closeVote > userLock ){
+                tokenContract.setLock(msg.sender,closeVote);
+            }    
+            if (inDumperShield) {
+                userLock = dumperShield.getLock(msg.sender);
+                if(closeVote > userLock)
+                    dumperShield.setLock(msg.sender,closeVote);
+            }
         }
         return true;
         
@@ -256,10 +258,11 @@ contract Governance  is Ownable{
 
         require(ruleId <= rulesIds,"Wrong rule ID");
         Rule storage r = rules[ruleId];
-        uint256 power = _getVotingPower(msg.sender);
+        (uint256 power, bool inDumperShield) = _getVotingPower(msg.sender);
         _getCirculation();
         uint256 percentage = power * 10000 / circulationSupply;
         require(percentage >= expeditedLevel,"require expedited Level to suggest change");
+        uint256 closeVote = block.timestamp + closeTime;
         ballotIds += 1;
         Ballot storage b = ballots[ballotIds];
         b.ruleId = ruleId;
@@ -267,23 +270,32 @@ contract Governance  is Ownable{
         b.creator = msg.sender;
         b.yea = power;
         b.totalVotes = power;
-        b.closeVote = block.timestamp + closeTime;
+        b.closeVote = closeVote;
         b.status = Status.New;
         voted[msg.sender][ballotIds] = true;
         
         bool majority = _checkMajority(r.majority,ballotIds);
         
-        if(majority){
+        if (majority) {
             _executeBallot(ballotIds);
-        }else{
-            _lockToken(msg.sender,b.closeVote);
+        } else {
+            uint256 userLock = tokenContract.getLock(msg.sender);
+            if(closeVote > userLock ){
+                tokenContract.setLock(msg.sender,closeVote);
+                if (inDumperShield) dumperShield.setLock(msg.sender,closeVote);
+            }
+            if (inDumperShield) {
+                userLock = dumperShield.getLock(msg.sender);
+                if(closeVote > userLock)
+                    dumperShield.setLock(msg.sender,closeVote);
+            }
         }
         
+    
     }
     
     function executeBallot(uint256 _ballotId) external {
         Ballot storage b = ballots[_ballotId];
-        require(b.status != Status.Excuted,"Ballot is Excuted");
         bool majority = _checkMajority(rules[b.ruleId].majority,_ballotId);
         if(majority){
             _executeBallot(_ballotId);
@@ -297,11 +309,12 @@ contract Governance  is Ownable{
      */
     function _executeBallot(uint256 ballotId) internal {
         Ballot storage b = ballots[ballotId];
+        require(b.status != Status.Executed,"Ballot is Executed");
         Rule storage r = rules[b.ruleId];
         bytes memory command = abi.encodePacked(bytes4(keccak256(bytes(r.funcAbi))), b.args);
         trigger(r.contr, command);
         b.closeVote = block.timestamp;
-        b.status = Status.Excuted;
+        b.status = Status.Executed;
         emit ApplyBallot(b.ruleId, ballotId);
     }
 
