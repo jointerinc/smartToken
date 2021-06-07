@@ -213,7 +213,8 @@ contract Governance  is Ownable{
         //circulationSupplyUpdated = block.timestamp;  // timestamp when circulationSupply updates
         
     }
-    
+
+
     // answer 1 = yay and answer 2 = nay
     function vote(uint256 _ballotId,uint answer) external returns (bool){
         require(_ballotId <= ballotIds,"Wrong ballot ID");
