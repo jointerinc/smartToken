@@ -122,6 +122,16 @@ contract Governance  is Ownable{
         }
     }
     
+    
+    /**
+     * @dev Set percentage of minimumVoteLevel 
+     * @param level The percentage
+    */
+    function setMinimumVoteLevel(uint256 level) external onlyOwner {
+        require(level > 1 && level <= 10000, "Wrong level");
+        minimumVoteLevel = level;
+    }
+
     /**
      * @dev Set percentage of participants voting power considering as Absolute Majority
      * @param level The percentage
