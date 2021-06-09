@@ -27,6 +27,13 @@ contract Governance  is Ownable{
     
     uint256 public absoluteLevel = 5000; // this percentage of participants voting power considering as Absolute Majority
     
+    uint256 public minimumVoteLevel = 2000; // to Executed vote this much from total supply should vote 
+    
+    // after this period ballot is null void
+    // we need this because if absoluteLevel change 
+    // so if absoluteLevel set 20% and past ballot have 20 yea vote past ballot also pass 
+    uint256 public nullVoteTime = 48 hours;  
+    
     uint256 public ballotIds;
     uint256 public rulesIds;
     
@@ -63,12 +70,13 @@ contract Governance  is Ownable{
     address[] public excluded;
     IERC20Token public dumperShield;
     
-    event AddRule(address indexed contractAddress, string funcAbi, uint8 majorMain);
+    event AddRule(address indexed contractAddress, string funcAbi, uint32 majorMain);
     event ApplyBallot(uint256 indexed ruleId, uint256 indexed ballotId);
+    event BallotCreated(uint256 indexed ruleId, uint256 indexed ballotId);
 
     
     constructor(address _token)  {
-        rules[0] = Rule(address(this),9000,"addRule(address,uint8,string)");
+        rules[0] = Rule(address(this),9000,"addRule(address,uint32,string)");
         tokenContract = IERC20Token(_token);
     }
     
@@ -80,7 +88,7 @@ contract Governance  is Ownable{
      */
     function addRule(
         address contr,
-        uint8  majority,
+        uint32  majority,
         string memory funcAbi
     ) external onlyOwner {
         require(contr != address(0), "Zero address");
@@ -117,7 +125,7 @@ contract Governance  is Ownable{
     /**
      * @dev Set percentage of participants voting power considering as Absolute Majority
      * @param level The percentage
-     */
+    */
     function setAbsoluteLevel(uint256 level) external onlyOwner {
         require(level > 5000 && level <= 10000, "Wrong level");
         absoluteLevel = level;
@@ -129,6 +137,14 @@ contract Governance  is Ownable{
     */
     function setCloseTime(uint256 time) external onlyOwner {
         closeTime = time;
+    }
+    
+    /**
+     * @dev Set close time for voting 
+     * @param time The epoch time
+    */
+    function setNullVoteTime(uint256 time) external onlyOwner {
+        nullVoteTime = time;
     }
 
     /**
@@ -183,9 +199,13 @@ contract Governance  is Ownable{
 
         if(totalVotes >= absoluteLevel){
             return true;
-        } else if (block.timestamp >= b.closeVote) {
-            totalVotes = b.yea * 10000 / b.totalVotes;
+        } else if (block.timestamp >= b.closeVote && block.timestamp < (b.closeVote+nullVoteTime)) {
             
+            uint256 allVotes = b.totalVotes * 10000 / circulationSupply ;
+            if(allVotes < minimumVoteLevel){
+                return false;
+            }
+            totalVotes = b.yea * 10000 / b.totalVotes;
             if(totalVotes > majority){
                 return true;
             }
@@ -277,13 +297,14 @@ contract Governance  is Ownable{
         
         bool majority = _checkMajority(r.majority,ballotIds);
         
+        emit BallotCreated(ruleId,ballotIds);
+        
         if (majority) {
             _executeBallot(ballotIds);
         } else {
             uint256 userLock = tokenContract.getLock(msg.sender);
             if(closeVote > userLock ){
                 tokenContract.setLock(msg.sender,closeVote);
-                if (inDumperShield) dumperShield.setLock(msg.sender,closeVote);
             }
             if (inDumperShield) {
                 userLock = dumperShield.getLock(msg.sender);
@@ -291,8 +312,6 @@ contract Governance  is Ownable{
                     dumperShield.setLock(msg.sender,closeVote);
             }
         }
-        
-    
     }
     
     function executeBallot(uint256 _ballotId) external {
@@ -301,8 +320,8 @@ contract Governance  is Ownable{
         if(majority){
             _executeBallot(_ballotId);
         }
-        
     }
+    
     
     /**
      * @dev Apply changes from ballot.
@@ -319,7 +338,7 @@ contract Governance  is Ownable{
         emit ApplyBallot(b.ruleId, ballotId);
     }
 
-
+    
     /**
      * @dev Apply changes from Governance System. Call destination contract.
      * @param contr The contract address to call
