@@ -14,8 +14,6 @@ interface IERC20Token {
 }
 
 
-
-
 contract Governance  is Ownable{
     
     IERC20Token public tokenContract; 
@@ -25,14 +23,8 @@ contract Governance  is Ownable{
     //2 decimals
     uint256 public expeditedLevel = 500; // user who has this percentage of token can suggest change
     
-    uint256 public absoluteLevel = 5000; // this percentage of participants voting power considering as Absolute Majority
+    uint256 public constant absoluteLevel = 5000; // this percentage of participants voting power considering as Absolute Majority
     
-    uint256 public minimumVoteLevel = 2000; // to Executed vote this much from total supply should vote 
-    
-    // after this period ballot is null void
-    // we need this because if absoluteLevel change 
-    // so if absoluteLevel set 20% and past ballot have 20 yea vote past ballot also pass 
-    uint256 public nullVoteTime = 48 hours;  
     
     uint256 public ballotIds;
     uint256 public rulesIds;
@@ -122,25 +114,8 @@ contract Governance  is Ownable{
         }
     }
     
-    
-    /**
-     * @dev Set percentage of minimumVoteLevel 
-     * @param level The percentage
-    */
-    function setMinimumVoteLevel(uint256 level) external onlyOwner {
-        require(level > 1 && level <= 10000, "Wrong level");
-        minimumVoteLevel = level;
-    }
+ 
 
-    /**
-     * @dev Set percentage of participants voting power considering as Absolute Majority
-     * @param level The percentage
-    */
-    function setAbsoluteLevel(uint256 level) external onlyOwner {
-        require(level > 5000 && level <= 10000, "Wrong level");
-        absoluteLevel = level;
-    }
-    
     /**
      * @dev Set close time for voting 
      * @param time The epoch time
@@ -149,14 +124,7 @@ contract Governance  is Ownable{
         closeTime = time;
     }
     
-    /**
-     * @dev Set close time for voting 
-     * @param time The epoch time
-    */
-    function setNullVoteTime(uint256 time) external onlyOwner {
-        nullVoteTime = time;
-    }
-
+    
     /**
      * @dev Set percentage of total circulation that allows user to expedite proposal
      * @param level The percentage
@@ -207,14 +175,10 @@ contract Governance  is Ownable{
 
         uint256 totalVotes =  b.yea * 10000 / circulationSupply ;
 
-        if(totalVotes >= absoluteLevel){
+        if(totalVotes > absoluteLevel){
             return true;
-        } else if (block.timestamp >= b.closeVote && block.timestamp < (b.closeVote+nullVoteTime)) {
+        } else if (block.timestamp >= b.closeVote) {
             
-            uint256 allVotes = b.totalVotes * 10000 / circulationSupply ;
-            if(allVotes < minimumVoteLevel){
-                return false;
-            }
             totalVotes = b.yea * 10000 / b.totalVotes;
             if(totalVotes > majority){
                 return true;
@@ -286,7 +250,6 @@ contract Governance  is Ownable{
     
 
     function createBallot(uint256 ruleId, bytes memory args) external {
-
         require(ruleId <= rulesIds,"Wrong rule ID");
         Rule storage r = rules[ruleId];
         (uint256 power, bool inDumperShield) = _getVotingPower(msg.sender);
